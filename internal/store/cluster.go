@@ -1,0 +1,59 @@
+package store
+
+import (
+	"fmt"
+
+	"task237-yeastbarcode/internal/model"
+)
+
+// SaveCluster inserts or replaces a correction cluster.
+func (s *Store) SaveCluster(c *model.CorrectionCluster) error {
+	_, err := s.db.Exec(
+		`INSERT INTO correction_clusters (id, lineage_id, generation, canonical_barcode, read_count, is_ancestor)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET canonical_barcode=excluded.canonical_barcode, read_count=excluded.read_count, is_ancestor=excluded.is_ancestor`,
+		c.ID, c.LineageID, c.Generation, c.CanonicalBarcode, c.ReadCount, boolToInt(c.IsAncestor))
+	if err != nil {
+		return fmt.Errorf("store: save cluster: %w", err)
+	}
+	return nil
+}
+
+// DeleteClustersForGeneration removes all clusters of a lineage generation so a
+// re-correction starts from a clean slate.
+func (s *Store) DeleteClustersForGeneration(lineageID string, generation int) error {
+	if _, err := s.db.Exec(
+		`DELETE FROM correction_clusters WHERE lineage_id = ? AND generation = ?`, lineageID, generation); err != nil {
+		return fmt.Errorf("store: delete clusters: %w", err)
+	}
+	return nil
+}
+
+// ListClusters returns clusters for a lineage ordered by generation then count.
+func (s *Store) ListClusters(lineageID string) ([]*model.CorrectionCluster, error) {
+	rows, err := s.db.Query(
+		`SELECT id, lineage_id, generation, canonical_barcode, read_count, is_ancestor
+		 FROM correction_clusters WHERE lineage_id = ? ORDER BY generation, read_count DESC`, lineageID)
+	if err != nil {
+		return nil, fmt.Errorf("store: list clusters: %w", err)
+	}
+	defer rows.Close()
+	out := []*model.CorrectionCluster{}
+	for rows.Next() {
+		var c model.CorrectionCluster
+		var anc int
+		if err := rows.Scan(&c.ID, &c.LineageID, &c.Generation, &c.CanonicalBarcode, &c.ReadCount, &anc); err != nil {
+			return nil, fmt.Errorf("store: scan cluster: %w", err)
+		}
+		c.IsAncestor = anc != 0
+		out = append(out, &c)
+	}
+	return out, rows.Err()
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}

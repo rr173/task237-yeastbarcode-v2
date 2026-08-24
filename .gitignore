@@ -1,0 +1,4 @@
+yeastbc.db
+*.db
+*.db-wal
+*.db-shm
