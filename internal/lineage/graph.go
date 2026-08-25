@@ -31,16 +31,9 @@ func (s *Service) DetectCycle(lineageID string, edge model.GenerationEdge) error
 	for _, e := range edges {
 		adj[e.ParentGeneration] = append(adj[e.ParentGeneration], e.ChildGeneration)
 	}
-	// would edge.parent reach edge.child already? then it's a cycle
-	if reachable(adj, edge.ParentGeneration, edge.ChildGeneration) {
-		return model.ErrGenerationCycle
-	}
-	// would child already reach parent (reverse edge)? then adding creates cycle
-	radj := map[int][]int{}
-	for _, e := range edges {
-		radj[e.ChildGeneration] = append(radj[e.ChildGeneration], e.ParentGeneration)
-	}
-	if reachable(radj, edge.ChildGeneration, edge.ParentGeneration) {
+	// only a path from the proposed child back to the proposed parent closes a cycle;
+	// an existing parent-to-child path is a valid transitive shortcut.
+	if reachable(adj, edge.ChildGeneration, edge.ParentGeneration) {
 		return model.ErrGenerationCycle
 	}
 	return nil

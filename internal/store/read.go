@@ -14,13 +14,20 @@ import (
 // model.ErrDuplicate so the caller can skip re-processing.
 func (s *Store) SaveRead(r *model.BarcodeRead) error {
 	q := strings.TrimSpace(strings.Trim(fmt.Sprint(r.Quality), "[]"))
-	_, err := s.db.Exec(
+	result, err := s.db.Exec(
 		`INSERT INTO reads (id, lineage_id, generation, raw_barcode, corrected_barcode, quality, status, cluster_id, hash, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(hash) DO NOTHING`,
 		r.ID, r.LineageID, r.Generation, r.RawBarcode, r.CorrectedBarcode, q, string(r.Status), r.ClusterID, r.Hash, r.CreatedAt.Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("store: save read: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("store: inspect saved read: %w", err)
+	}
+	if rows == 0 {
+		return model.ErrDuplicate
 	}
 	return nil
 }
@@ -94,14 +101,14 @@ func scanRead(sc scanner) (*model.BarcodeRead, error) {
 		return nil, fmt.Errorf("store: scan read: %w", err)
 	}
 	r := &model.BarcodeRead{
-		ID:             id,
-		LineageID:      lid,
-		Generation:     gen,
-		RawBarcode:     raw,
+		ID:               id,
+		LineageID:        lid,
+		Generation:       gen,
+		RawBarcode:       raw,
 		CorrectedBarcode: corr,
-		Status:         model.ReadStatus(status),
-		ClusterID:      cid,
-		Hash:           hash,
+		Status:           model.ReadStatus(status),
+		ClusterID:        cid,
+		Hash:             hash,
 	}
 	if t, err := time.Parse(time.RFC3339, created); err == nil {
 		r.CreatedAt = t

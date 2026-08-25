@@ -14,6 +14,9 @@ func TestIngestReadIsIdempotentAndValidatesInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
+	if err := st.SaveLineage(&model.CultureLineage{ID: "L-read", Name: "read", Status: model.LineageFiled}); err != nil {
+		t.Fatal(err)
+	}
 	svc := New(st)
 	quality := []int{35, 35, 35, 35}
 	first, err := svc.IngestRead("L-read", 0, "ACGT", quality)

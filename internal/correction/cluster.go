@@ -40,6 +40,9 @@ func New(st *store.Store, readSvc *read.Service, cfg Config) *Service {
 // Low-quality reads are marked excluded; the rest are assigned to a canonical
 // barcode cluster. Returns the created clusters.
 func (s *Service) ClusterGeneration(lineageID string, generation int) ([]*model.CorrectionCluster, error) {
+	if err := s.st.EnsureLineageMutable(lineageID); err != nil {
+		return nil, err
+	}
 	reads, err := s.st.ListReadsByGeneration(lineageID, generation)
 	if err != nil {
 		return nil, err
@@ -97,12 +100,12 @@ func (s *Service) ClusterGeneration(lineageID string, generation int) ([]*model.
 			_ = s.st.UpdateReadStatus(m.ID, model.ReadCorrected, a.canonical, clusterID)
 		}
 		c := &model.CorrectionCluster{
-			ID:              clusterID,
-			LineageID:       lineageID,
-			Generation:      generation,
+			ID:               clusterID,
+			LineageID:        lineageID,
+			Generation:       generation,
 			CanonicalBarcode: a.canonical,
-			ReadCount:       len(a.members),
-			IsAncestor:      false,
+			ReadCount:        len(a.members),
+			IsAncestor:       false,
 		}
 		if err := s.st.SaveCluster(c); err != nil {
 			return nil, err

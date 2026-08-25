@@ -13,8 +13,8 @@ func (s *Store) SaveSnapshot(snap *model.DiscriminationSnapshot) error {
 	_, err := s.db.Exec(
 		`INSERT INTO snapshots (id, lineage_id, status, summary, result_json, created_at, superseded_by)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(id) DO UPDATE SET status=excluded.status, summary=excluded.summary, result_json=excluded.result_json, superseded_by=excluded.superseded_by`,
-		snap.ID, snap.LineageID, string(snap.Status), snap.Summary, snap.ResultJSON, snap.CreatedAt.Format(time.RFC3339), snap.SupersededBy)
+		 ON CONFLICT(id) DO UPDATE SET status=excluded.status, superseded_by=excluded.superseded_by`,
+		snap.ID, snap.LineageID, string(snap.Status), snap.Summary, snap.ResultJSON, snap.CreatedAt.Format(time.RFC3339Nano), snap.SupersededBy)
 	if err != nil {
 		return fmt.Errorf("store: save snapshot: %w", err)
 	}
@@ -29,6 +29,28 @@ func (s *Store) SupersedeSnapshot(oldID, newID string) error {
 		return fmt.Errorf("store: supersede snapshot: %w", err)
 	}
 	return nil
+}
+
+// SupersedeOtherSnapshots closes older drafts and publications when one result is confirmed.
+func (s *Store) SupersedeOtherSnapshots(lineageID, keepID string) error {
+	_, err := s.db.Exec(
+		`UPDATE snapshots SET status = ?, superseded_by = ?
+		 WHERE lineage_id = ? AND id <> ? AND status = ?`,
+		string(model.SnapSuperseded), keepID, lineageID, keepID, string(model.SnapPublished))
+	if err != nil {
+		return fmt.Errorf("store: supersede other snapshots: %w", err)
+	}
+	return nil
+}
+
+// HasNewerSnapshot reports whether a later draft or publication exists for the lineage.
+func (s *Store) HasNewerSnapshot(lineageID, id string, createdAt time.Time) (bool, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(1) FROM snapshots WHERE lineage_id = ? AND id <> ? AND created_at > ?`, lineageID, id, createdAt.Format(time.RFC3339Nano)).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("store: check newer snapshot: %w", err)
+	}
+	return count > 0, nil
 }
 
 // GetSnapshot fetches a snapshot by id.

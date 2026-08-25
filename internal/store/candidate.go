@@ -17,7 +17,10 @@ func (s *Store) SaveCandidate(c *model.ContaminationCandidate) error {
 	_, err := s.db.Exec(
 		`INSERT INTO candidates (id, lineage_id, generation, barcode, evidence_score, frequency, source, status, verdict_note, decided_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(id) DO UPDATE SET evidence_score=excluded.evidence_score, frequency=excluded.frequency, source=excluded.source, status=excluded.status, verdict_note=excluded.verdict_note, decided_at=excluded.decided_at`,
+		ON CONFLICT(id) DO UPDATE SET evidence_score=excluded.evidence_score, frequency=excluded.frequency, source=excluded.source,
+		status=CASE WHEN candidates.status IN ('confirmed', 'rejected') THEN candidates.status ELSE excluded.status END,
+		verdict_note=CASE WHEN candidates.status IN ('confirmed', 'rejected') THEN candidates.verdict_note ELSE excluded.verdict_note END,
+		decided_at=CASE WHEN candidates.status IN ('confirmed', 'rejected') THEN candidates.decided_at ELSE excluded.decided_at END`,
 		c.ID, c.LineageID, c.Generation, c.Barcode, c.EvidenceScore, c.Frequency, c.Source, string(c.Status), c.VerdictNote, decided)
 	if err != nil {
 		return fmt.Errorf("store: save candidate: %w", err)

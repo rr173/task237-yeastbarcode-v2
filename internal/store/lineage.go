@@ -92,6 +92,16 @@ func (s *Store) SaveGenerationEdge(e model.GenerationEdge) error {
 	return nil
 }
 
+// GenerationEdgeExists reports whether an exact edge is already persisted.
+func (s *Store) GenerationEdgeExists(e model.GenerationEdge) (bool, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(1) FROM generation_edges WHERE lineage_id = ? AND parent_generation = ? AND child_generation = ?`, e.LineageID, e.ParentGeneration, e.ChildGeneration).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("store: check edge: %w", err)
+	}
+	return count != 0, nil
+}
+
 // ListGenerationEdges returns edges for a lineage ordered by child generation.
 func (s *Store) ListGenerationEdges(lineageID string) ([]model.GenerationEdge, error) {
 	rows, err := s.db.Query(

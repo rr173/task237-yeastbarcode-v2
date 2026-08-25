@@ -13,6 +13,9 @@ func TestAnalyzeGenerationFindsForeignCluster(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
+	if err := st.SaveLineage(&model.CultureLineage{ID: "L-analysis", Name: "analysis", Status: model.LineageFiled}); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.SaveGenerationEdge(model.GenerationEdge{LineageID: "L-analysis", ParentGeneration: 0, ChildGeneration: 1}); err != nil {
 		t.Fatal(err)
 	}

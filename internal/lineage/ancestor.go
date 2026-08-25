@@ -9,6 +9,9 @@ import (
 // generations are compared; a barcode appearing in a descendant that is NOT in
 // the ancestor set and not explainable by inheritance is a contamination signal.
 func (s *Service) LockAncestor(lineageID string, generation int) error {
+	if err := s.st.EnsureLineageMutable(lineageID); err != nil {
+		return err
+	}
 	clusters, err := s.st.ListClusters(lineageID)
 	if err != nil {
 		return err
@@ -31,15 +34,18 @@ func (s *Service) LockAncestor(lineageID string, generation int) error {
 
 // AncestorBarcodes returns the set of locked ancestor canonical barcodes.
 func (s *Service) AncestorBarcodes(lineageID string) (map[string]bool, error) {
-	clusters, err := s.st.ListClusters(lineageID)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]bool{}
-	for _, c := range clusters {
-		if c.IsAncestor {
-			out[c.CanonicalBarcode] = true
+	return s.st.ListAncestorBarcodes(lineageID)
+}
+
+// RestoreAncestorLocks reapplies persisted ancestor decisions after a cluster rebuild.
+func (s *Service) RestoreAncestorLocks(lineageID string, locked map[string]bool, clusters []*model.CorrectionCluster) error {
+	for _, cluster := range clusters {
+		if locked[cluster.CanonicalBarcode] {
+			cluster.IsAncestor = true
+			if err := s.st.SaveCluster(cluster); err != nil {
+				return err
+			}
 		}
 	}
-	return out, nil
+	return nil
 }

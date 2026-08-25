@@ -31,6 +31,12 @@ func ClusterHash(lineageID string, generation int, canonical string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// SnapshotHash derives an immutable id from the lineage, creation instant and frozen payload.
+func SnapshotHash(lineageID, createdAt, resultJSON string) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{lineageID, createdAt, resultJSON}, "|")))
+	return hex.EncodeToString(sum[:])
+}
+
 // SortedKeys returns the sorted keys of a string map (deterministic hashing).
 func SortedKeys(m map[string]string) []string {
 	ks := make([]string, 0, len(m))

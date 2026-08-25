@@ -23,6 +23,9 @@ func New(st *store.Store, cfg Config) *Service { return &Service{st: st, cfg: cf
 // barcodes (not in ancestor set and not within InheritTolerance of an inherited
 // barcode) whose frequency exceeds MinFrequency become candidates.
 func (s *Service) AnalyzeGeneration(lineageID string, generation int) ([]*model.ContaminationCandidate, error) {
+	if err := s.st.EnsureLineageMutable(lineageID); err != nil {
+		return nil, err
+	}
 	clusters, err := s.st.ListClusters(lineageID)
 	if err != nil {
 		return nil, err
@@ -74,6 +77,14 @@ func (s *Service) AnalyzeGeneration(lineageID string, generation int) ([]*model.
 			Frequency:     freq,
 			Source:        "foreign_barcode",
 			Status:        model.CandGenerated,
+		}
+		if existing, lookupErr := s.st.GetCandidate(cand.ID); lookupErr == nil {
+			if existing.Status == model.CandConfirmed || existing.Status == model.CandRejected {
+				cands = append(cands, existing)
+				continue
+			}
+		} else if lookupErr != model.ErrNotFound {
+			return nil, lookupErr
 		}
 		if err := s.st.SaveCandidate(cand); err != nil {
 			return nil, err
@@ -164,6 +175,9 @@ func (s *Service) DecideCandidate(id string, confirm bool, note string) error {
 	}
 	if target == nil {
 		return model.ErrNotFound
+	}
+	if err := s.st.EnsureLineageMutable(target.LineageID); err != nil {
+		return err
 	}
 	to := model.CandRejected
 	if confirm {

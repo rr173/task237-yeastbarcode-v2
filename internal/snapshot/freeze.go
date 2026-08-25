@@ -67,13 +67,14 @@ func (s *Service) Publish(lineageID, summary string) (*model.DiscriminationSnaps
 	if err != nil {
 		return nil, fmt.Errorf("snapshot: marshal: %w", err)
 	}
+	now := time.Now().UTC()
 	snap := &model.DiscriminationSnapshot{
-		ID:         model.ClusterHash(lineageID, len(clusters), "snap")[:16],
+		ID:         model.SnapshotHash(lineageID, now.Format(time.RFC3339Nano), string(payload))[:16],
 		LineageID:  lineageID,
 		Status:     model.SnapDraft,
 		Summary:    summary,
 		ResultJSON: string(payload),
-		CreatedAt:  time.Now().UTC(),
+		CreatedAt:  now,
 	}
 	// supersede any previously published snapshot
 	prev, err := s.st.ListSnapshots(lineageID)
@@ -101,6 +102,16 @@ func (s *Service) Confirm(id string) error {
 	}
 	if !model.ValidSnapshotTransition(snap.Status, model.SnapPublished) {
 		return fmt.Errorf("snapshot: invalid transition %s->published", snap.Status)
+	}
+	newer, err := s.st.HasNewerSnapshot(snap.LineageID, snap.ID, snap.CreatedAt)
+	if err != nil {
+		return err
+	}
+	if newer {
+		return fmt.Errorf("snapshot: only the newest draft can be published")
+	}
+	if err := s.st.SupersedeOtherSnapshots(snap.LineageID, snap.ID); err != nil {
+		return err
 	}
 	snap.Status = model.SnapPublished
 	return s.st.SaveSnapshot(snap)

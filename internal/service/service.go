@@ -4,6 +4,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -93,7 +94,11 @@ func (s *Services) TransitionLineage(id string, to model.LineageStatus) (*model.
 
 // IngestRead delegates to the read service.
 func (s *Services) IngestRead(lineageID string, generation int, bc string, q []int) (*model.BarcodeRead, error) {
-	return s.Read.IngestRead(lineageID, generation, bc, q)
+	read, err := s.Read.IngestRead(lineageID, generation, bc, q)
+	if errors.Is(err, model.ErrDuplicate) && read == nil {
+		return nil, fmt.Errorf("service: duplicate read without stored record")
+	}
+	return read, err
 }
 
 // AddGenerationEdge validates (cycle guard) then stores an edge.
@@ -106,7 +111,18 @@ func (s *Services) AddGenerationEdge(e model.GenerationEdge) error {
 
 // CorrectGeneration runs correction/clustering for one generation.
 func (s *Services) CorrectGeneration(lineageID string, generation int) ([]*model.CorrectionCluster, error) {
-	return s.Correction.ClusterGeneration(lineageID, generation)
+	locked, err := s.Lineage.AncestorBarcodes(lineageID)
+	if err != nil {
+		return nil, err
+	}
+	clusters, err := s.Correction.ClusterGeneration(lineageID, generation)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Lineage.RestoreAncestorLocks(lineageID, locked, clusters); err != nil {
+		return nil, err
+	}
+	return clusters, nil
 }
 
 // LockAncestor delegates to lineage.
@@ -116,7 +132,17 @@ func (s *Services) LockAncestor(lineageID string, generation int) error {
 
 // AnalyzeGeneration runs contamination analysis for one generation.
 func (s *Services) AnalyzeGeneration(lineageID string, generation int) ([]*model.ContaminationCandidate, error) {
-	return s.Discriminate.AnalyzeGeneration(lineageID, generation)
+	candidates, err := s.Discriminate.AnalyzeGeneration(lineageID, generation)
+	if err != nil {
+		return nil, err
+	}
+	for i, candidate := range candidates {
+		stored, lookupErr := s.Store.GetCandidate(candidate.ID)
+		if lookupErr == nil {
+			candidates[i] = stored
+		}
+	}
+	return candidates, nil
 }
 
 // DecideCandidate delegates to discriminate.
@@ -173,6 +199,13 @@ func (s *Services) PublishSnapshot(lineageID, summary string) (*model.Discrimina
 
 // ConfirmSnapshot delegates to snapshot.
 func (s *Services) ConfirmSnapshot(id string) error {
+	snap, err := s.Store.GetSnapshot(id)
+	if err != nil {
+		return err
+	}
+	if err := s.Store.EnsureLineageMutable(snap.LineageID); err != nil {
+		return err
+	}
 	return s.Snapshot.Confirm(id)
 }
 

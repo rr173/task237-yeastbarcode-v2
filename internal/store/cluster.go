@@ -51,6 +51,24 @@ func (s *Store) ListClusters(lineageID string) ([]*model.CorrectionCluster, erro
 	return out, rows.Err()
 }
 
+// ListAncestorBarcodes returns the persisted ancestor barcode set for a lineage.
+func (s *Store) ListAncestorBarcodes(lineageID string) (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT canonical_barcode FROM correction_clusters WHERE lineage_id = ? AND is_ancestor = 1`, lineageID)
+	if err != nil {
+		return nil, fmt.Errorf("store: list ancestor barcodes: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var barcode string
+		if err := rows.Scan(&barcode); err != nil {
+			return nil, fmt.Errorf("store: scan ancestor barcode: %w", err)
+		}
+		out[barcode] = true
+	}
+	return out, rows.Err()
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1
