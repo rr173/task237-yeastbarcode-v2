@@ -67,13 +67,19 @@ func (s *Service) Publish(lineageID, summary string) (*model.DiscriminationSnaps
 	if err != nil {
 		return nil, fmt.Errorf("snapshot: marshal: %w", err)
 	}
+	// Each publish gets its own identity derived from the lineage, the
+	// reviewer summary, the frozen payload and the publish timestamp. Two
+	// publishes — even with identical content — never share an identity, so a
+	// later publish can never collide with and overwrite a prior published
+	// snapshot's summary/result.
+	createdAt := time.Now().UTC()
 	snap := &model.DiscriminationSnapshot{
-		ID:         model.ClusterHash(lineageID, len(clusters), "snap")[:16],
+		ID:         model.SnapshotID(lineageID, summary, string(payload), createdAt.Format(time.RFC3339Nano))[:16],
 		LineageID:  lineageID,
 		Status:     model.SnapDraft,
 		Summary:    summary,
 		ResultJSON: string(payload),
-		CreatedAt:  time.Now().UTC(),
+		CreatedAt:  createdAt,
 	}
 	// supersede any previously published snapshot
 	prev, err := s.st.ListSnapshots(lineageID)

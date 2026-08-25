@@ -31,6 +31,16 @@ func ClusterHash(lineageID string, generation int, canonical string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// SnapshotID computes a stable hash for one discrimination snapshot publish.
+// It mixes the lineage, the reviewer summary, the frozen result payload and the
+// publish timestamp so every publish — even two with identical content — gets a
+// distinct identity and cannot collide with a prior publish (which would let a
+// later publish overwrite an older published snapshot's summary and result).
+func SnapshotID(lineageID, summary, resultJSON, createdAt string) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%s", lineageID, summary, resultJSON, createdAt)))
+	return hex.EncodeToString(sum[:])
+}
+
 // SortedKeys returns the sorted keys of a string map (deterministic hashing).
 func SortedKeys(m map[string]string) []string {
 	ks := make([]string, 0, len(m))

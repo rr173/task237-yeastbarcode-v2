@@ -3,22 +3,35 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"task237-yeastbarcode/internal/model"
+
+	_ "modernc.org/sqlite"
 )
 
-// SaveSnapshot inserts or replaces a discrimination snapshot.
+// SaveSnapshot inserts a new discrimination snapshot. It never overwrites an
+// existing snapshot: an id collision (which would let a later publish rewrite an
+// already-published snapshot's summary and frozen result) is surfaced as
+// model.ErrDuplicate rather than silently applied.
 func (s *Store) SaveSnapshot(snap *model.DiscriminationSnapshot) error {
 	_, err := s.db.Exec(
 		`INSERT INTO snapshots (id, lineage_id, status, summary, result_json, created_at, superseded_by)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET status=excluded.status, summary=excluded.summary, result_json=excluded.result_json, superseded_by=excluded.superseded_by`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		snap.ID, snap.LineageID, string(snap.Status), snap.Summary, snap.ResultJSON, snap.CreatedAt.Format(time.RFC3339Nano), snap.SupersededBy)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return model.ErrDuplicate
+		}
 		return fmt.Errorf("store: save snapshot: %w", err)
 	}
 	return nil
+}
+
+// isUniqueViolation reports whether err is a SQLite UNIQUE-constraint failure.
+func isUniqueViolation(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
 // SupersedeSnapshot marks a snapshot as superseded by another.

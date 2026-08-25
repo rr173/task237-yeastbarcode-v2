@@ -201,12 +201,11 @@ func (s *Services) GenerationQuality(lineageID string, generation int) (Generati
 
 // PublishSnapshot delegates to snapshot.
 func (s *Services) PublishSnapshot(lineageID, summary string) (*model.DiscriminationSnapshot, error) {
-	snap, err := s.Snapshot.Publish(lineageID, summary)
-	if err != nil {
-		return nil, err
-	}
-	snap.ID = model.ClusterHash(lineageID, 0, "snap")[:16]
-	return snap, nil
+	// snapshot.Service.Publish persists the snapshot with its own per-publish
+	// identity and returns that same id; it must not be rewritten here, or the
+	// caller (e.g. ConfirmSnapshot) would look up a different row than the one
+	// that was stored.
+	return s.Snapshot.Publish(lineageID, summary)
 }
 
 // ConfirmSnapshot delegates to snapshot.
