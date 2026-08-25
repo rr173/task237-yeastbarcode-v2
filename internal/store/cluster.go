@@ -65,6 +65,28 @@ func (s *Store) AncestorGeneration(lineageID string) (int, bool, error) {
 	return generation, true, nil
 }
 
+// LockedAncestorBarcodes returns the canonical barcodes currently locked as the
+// ancestor clone set for a lineage. A re-correction must snapshot this set
+// before deleting/rebuilding clusters and reapply the locks afterwards, so the
+// lineage judgement keeps its reference baseline across re-runs.
+func (s *Store) LockedAncestorBarcodes(lineageID string) (map[string]bool, error) {
+	rows, err := s.db.Query(
+		`SELECT canonical_barcode FROM correction_clusters WHERE lineage_id = ? AND is_ancestor = 1`, lineageID)
+	if err != nil {
+		return nil, fmt.Errorf("store: locked ancestor barcodes: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var bc string
+		if err := rows.Scan(&bc); err != nil {
+			return nil, fmt.Errorf("store: scan ancestor barcode: %w", err)
+		}
+		out[bc] = true
+	}
+	return out, rows.Err()
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1

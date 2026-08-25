@@ -47,6 +47,13 @@ func (s *Service) ClusterGeneration(lineageID string, generation int) ([]*model.
 	if err != nil {
 		return nil, err
 	}
+	// snapshot the locked ancestor barcodes before clearing clusters so a
+	// re-correction of the ancestor generation keeps the lineage reference
+	// baseline; the locks are reapplied to the rebuilt clusters below.
+	lockedAncestors, err := s.st.LockedAncestorBarcodes(lineageID)
+	if err != nil {
+		return nil, err
+	}
 	// reset clusters for idempotent re-correction
 	if err := s.st.DeleteClustersForGeneration(lineageID, generation); err != nil {
 		return nil, err
@@ -99,13 +106,16 @@ func (s *Service) ClusterGeneration(lineageID string, generation int) ([]*model.
 		for _, m := range a.members {
 			_ = s.st.UpdateReadStatus(m.ID, model.ReadCorrected, a.canonical, clusterID)
 		}
+		// preserve a prior ancestor lock: a rebuilt cluster whose canonical
+		// barcode was part of the locked ancestor set stays locked.
+		isAncestor := lockedAncestors[a.canonical]
 		c := &model.CorrectionCluster{
 			ID:               clusterID,
 			LineageID:        lineageID,
 			Generation:       generation,
 			CanonicalBarcode: a.canonical,
 			ReadCount:        len(a.members),
-			IsAncestor:       false,
+			IsAncestor:       isAncestor,
 		}
 		if err := s.st.SaveCluster(c); err != nil {
 			return nil, err

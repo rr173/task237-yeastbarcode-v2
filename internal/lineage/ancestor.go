@@ -55,5 +55,3 @@ func (s *Service) AncestorBarcodes(lineageID string) (map[string]bool, error) {
 	}
 	return out, nil
 }
-
-// RestoreAncestorLocks reapplies persisted ancestor decisions after a cluster rebuild.
