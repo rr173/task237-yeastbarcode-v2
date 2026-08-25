@@ -21,6 +21,14 @@ func New(st *store.Store) *Service { return &Service{st: st} }
 
 // DetectCycle returns ErrGenerationCycle if adding edge would create a cycle in
 // the lineage's generation graph (transitive reachability check).
+//
+// A legal cross-generation shortcut edge (e.g. gen 0 -> gen 2 alongside an
+// existing 0 -> 1 -> 2 chain) introduces a parallel path but never a cycle, so
+// it must be accepted. The cycle condition is narrowly "the child can already
+// reach the parent through existing edges"; only then does parent->child close
+// a loop. Duplicate edges (child already directly reachable from parent) do
+// not satisfy that condition and are therefore not flagged here — the store
+// layer handles their idempotent upsert.
 func (s *Service) DetectCycle(lineageID string, edge model.GenerationEdge) error {
 	edges, err := s.st.ListGenerationEdges(lineageID)
 	if err != nil {
@@ -31,14 +39,7 @@ func (s *Service) DetectCycle(lineageID string, edge model.GenerationEdge) error
 	for _, e := range edges {
 		adj[e.ParentGeneration] = append(adj[e.ParentGeneration], e.ChildGeneration)
 	}
-	if reachable(adj, edge.ParentGeneration, edge.ChildGeneration) {
-		return model.ErrGenerationCycle
-	}
-	radj := map[int][]int{}
-	for _, e := range edges {
-		radj[e.ChildGeneration] = append(radj[e.ChildGeneration], e.ParentGeneration)
-	}
-	if reachable(radj, edge.ChildGeneration, edge.ParentGeneration) {
+	if reachable(adj, edge.ChildGeneration, edge.ParentGeneration) {
 		return model.ErrGenerationCycle
 	}
 	return nil
@@ -46,6 +47,9 @@ func (s *Service) DetectCycle(lineageID string, edge model.GenerationEdge) error
 
 func reachable(adj map[int][]int, from, target int) bool {
 	if from == target {
+		// A self-referential reachability (child == parent) means the edge
+		// closes back onto itself; ValidateGenerationEdge rejects child == parent
+		// outright, so a true hit here signals a genuine cycle.
 		return true
 	}
 	seen := map[int]bool{}
@@ -61,7 +65,9 @@ func reachable(adj map[int][]int, from, target int) bool {
 			if c == target {
 				return true
 			}
-			stack = append(stack, c)
+			if !seen[c] {
+				stack = append(stack, c)
+			}
 		}
 	}
 	return false

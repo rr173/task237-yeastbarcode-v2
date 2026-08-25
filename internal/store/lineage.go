@@ -81,10 +81,15 @@ func scanLineage(sc scanner) (*model.CultureLineage, error) {
 	return l, nil
 }
 
-// SaveGenerationEdge inserts a parent/child generation edge.
+// SaveGenerationEdge inserts a parent/child generation edge. It is idempotent:
+// re-submitting an edge that already exists is a no-op rather than an error,
+// matching the behavior expected for repeated/parallel ingestion of the same
+// inheritance relationship.
 func (s *Store) SaveGenerationEdge(e model.GenerationEdge) error {
 	_, err := s.db.Exec(
-		`INSERT INTO generation_edges (lineage_id, parent_generation, child_generation) VALUES (?, ?, ?)`,
+		`INSERT INTO generation_edges (lineage_id, parent_generation, child_generation)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(lineage_id, parent_generation, child_generation) DO NOTHING`,
 		e.LineageID, e.ParentGeneration, e.ChildGeneration)
 	if err != nil {
 		return fmt.Errorf("store: save edge: %w", err)

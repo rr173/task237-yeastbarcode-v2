@@ -47,3 +47,32 @@ func TestOpenReopenAndRollback(t *testing.T) {
 		t.Fatalf("reopened lineage mismatch: %+v", got)
 	}
 }
+
+// SaveGenerationEdge must be idempotent: re-submitting the same edge is a no-op,
+// it must never error, and it must not create a duplicate row.
+func TestSaveGenerationEdgeIdempotent(t *testing.T) {
+	st, err := Open(t.TempDir() + "/edge.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.SaveLineage(&model.CultureLineage{ID: "L-edge", Name: "edge", Status: model.LineageFiled, CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	e := model.GenerationEdge{LineageID: "L-edge", ParentGeneration: 0, ChildGeneration: 1}
+	if err := st.SaveGenerationEdge(e); err != nil {
+		t.Fatalf("first save: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := st.SaveGenerationEdge(e); err != nil {
+			t.Fatalf("duplicate save #%d: %v", i, err)
+		}
+	}
+	edges, err := st.ListGenerationEdges("L-edge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(edges) != 1 {
+		t.Fatalf("expected single edge after duplicates, got %d: %+v", len(edges), edges)
+	}
+}
