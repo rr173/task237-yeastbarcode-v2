@@ -81,6 +81,13 @@ func (s *Service) AnalyzeGeneration(lineageID string, generation int) ([]*model.
 		if err := s.st.SaveCandidate(cand); err != nil {
 			return nil, err
 		}
+		// candidate ids are stable, so SaveCandidate upserts onto any existing
+		// row and leaves a prior verdict intact. Re-read so the returned object
+		// reflects the persisted (possibly already-adjudicated) state rather
+		// than the freshly-built "generated" view.
+		if stored, err := s.st.GetCandidate(cand.ID); err == nil {
+			cand = stored
+		}
 		cands = append(cands, cand)
 	}
 	return cands, nil

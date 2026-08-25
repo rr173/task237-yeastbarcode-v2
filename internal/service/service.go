@@ -133,7 +133,10 @@ func (s *Services) LockAncestor(lineageID string, generation int) error {
 	return s.Lineage.LockAncestor(lineageID, generation)
 }
 
-// AnalyzeGeneration runs contamination analysis for one generation.
+// AnalyzeGeneration runs contamination analysis for one generation. Candidates
+// carry stable ids, so re-analysing a generation hits existing rows; any prior
+// human verdict (confirmation/rejection + note) is preserved on re-save and
+// reflected in the returned candidates rather than being reset to generated.
 func (s *Services) AnalyzeGeneration(lineageID string, generation int) ([]*model.ContaminationCandidate, error) {
 	candidates, err := s.Discriminate.AnalyzeGeneration(lineageID, generation)
 	if err != nil {
@@ -144,10 +147,6 @@ func (s *Services) AnalyzeGeneration(lineageID string, generation int) ([]*model
 		if lookupErr == nil {
 			candidates[i] = stored
 		}
-	}
-	for _, candidate := range candidates {
-		candidate.Status = model.CandGenerated
-		candidate.VerdictNote = ""
 	}
 	return candidates, nil
 }

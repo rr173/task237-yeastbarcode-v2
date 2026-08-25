@@ -8,7 +8,12 @@ import (
 	"task237-yeastbarcode/internal/model"
 )
 
-// SaveCandidate inserts a contamination candidate.
+// SaveCandidate inserts a contamination candidate. The candidate id is a
+// stable hash of (lineage, generation, barcode), so re-analysing a generation
+// collides with any existing candidate row. On collision only the re-computed
+// evidence metrics are refreshed; the human verdict (status, verdict_note,
+// decided_at) is preserved so re-analysis never erases an existing
+// confirmation, rejection or attached note.
 func (s *Store) SaveCandidate(c *model.ContaminationCandidate) error {
 	decided := ""
 	if c.DecidedAt != nil {
@@ -17,8 +22,7 @@ func (s *Store) SaveCandidate(c *model.ContaminationCandidate) error {
 	_, err := s.db.Exec(
 		`INSERT INTO candidates (id, lineage_id, generation, barcode, evidence_score, frequency, source, status, verdict_note, decided_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET evidence_score=excluded.evidence_score, frequency=excluded.frequency, source=excluded.source,
-		status=excluded.status, verdict_note=excluded.verdict_note, decided_at=excluded.decided_at`,
+		 ON CONFLICT(id) DO UPDATE SET evidence_score=excluded.evidence_score, frequency=excluded.frequency, source=excluded.source`,
 		c.ID, c.LineageID, c.Generation, c.Barcode, c.EvidenceScore, c.Frequency, c.Source, string(c.Status), c.VerdictNote, decided)
 	if err != nil {
 		return fmt.Errorf("store: save candidate: %w", err)
