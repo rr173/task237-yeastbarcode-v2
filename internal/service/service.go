@@ -18,12 +18,22 @@ import (
 
 // Services bundles the domain services.
 type Services struct {
-	Store       *store.Store
-	Read        *read.Service
-	Correction  *correction.Service
-	Lineage     *lineage.Service
+	Store        *store.Store
+	Read         *read.Service
+	Correction   *correction.Service
+	Lineage      *lineage.Service
 	Discriminate *discriminate.Service
-	Snapshot    *snapshot.Service
+	Snapshot     *snapshot.Service
+}
+
+// GenerationQuality summarizes the read-quality state for one generation.
+type GenerationQuality struct {
+	LineageID       string  `json:"lineage_id"`
+	Generation      int     `json:"generation"`
+	TotalReads      int     `json:"total_reads"`
+	UsableReads     int     `json:"usable_reads"`
+	LowQualityReads int     `json:"low_quality_reads"`
+	MeanQuality     float64 `json:"mean_quality"`
 }
 
 // New wires up all domain services over a single store.
@@ -32,12 +42,12 @@ func New(st *store.Store) *Services {
 	cfgCorr := correction.DefaultConfig()
 	cfgDisc := discriminate.DefaultConfig()
 	return &Services{
-		Store:       st,
-		Read:        readSvc,
-		Correction:  correction.New(st, readSvc, cfgCorr),
-		Lineage:     lineage.New(st),
+		Store:        st,
+		Read:         readSvc,
+		Correction:   correction.New(st, readSvc, cfgCorr),
+		Lineage:      lineage.New(st),
 		Discriminate: discriminate.New(st, cfgDisc),
-		Snapshot:    snapshot.New(st),
+		Snapshot:     snapshot.New(st),
 	}
 }
 
@@ -112,6 +122,48 @@ func (s *Services) AnalyzeGeneration(lineageID string, generation int) ([]*model
 // DecideCandidate delegates to discriminate.
 func (s *Services) DecideCandidate(id string, confirm bool, note string) error {
 	return s.Discriminate.DecideCandidate(id, confirm, note)
+}
+
+// GetCandidate returns a single candidate for detail views and API clients.
+func (s *Services) GetCandidate(id string) (*model.ContaminationCandidate, error) {
+	return s.Store.GetCandidate(id)
+}
+
+// ExpectedBarcodes returns the canonical barcodes inherited by a generation.
+func (s *Services) ExpectedBarcodes(lineageID string, generation int) (map[string]bool, error) {
+	return s.Lineage.ExpectedBarcodes(lineageID, generation)
+}
+
+// AncestorBarcodes returns the locked founding barcode set for a lineage.
+func (s *Services) AncestorBarcodes(lineageID string) (map[string]bool, error) {
+	return s.Lineage.AncestorBarcodes(lineageID)
+}
+
+// GenerationQuality reports the quality split used by correction for a generation.
+func (s *Services) GenerationQuality(lineageID string, generation int) (GenerationQuality, error) {
+	reads, err := s.Store.ListReadsByGeneration(lineageID, generation)
+	if err != nil {
+		return GenerationQuality{}, err
+	}
+	policy := read.NewQualityPolicy()
+	result := GenerationQuality{LineageID: lineageID, Generation: generation, TotalReads: len(reads)}
+	totalQuality := 0.0
+	qualityVectors := 0
+	for _, item := range reads {
+		if policy.IsUsable(item.Quality) {
+			result.UsableReads++
+		} else {
+			result.LowQualityReads++
+		}
+		if len(item.Quality) > 0 {
+			totalQuality += policy.MeanQuality(item.Quality)
+			qualityVectors++
+		}
+	}
+	if qualityVectors > 0 {
+		result.MeanQuality = totalQuality / float64(qualityVectors)
+	}
+	return result, nil
 }
 
 // PublishSnapshot delegates to snapshot.

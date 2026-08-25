@@ -30,25 +30,31 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/self-check", s.handleSelfCheck)
 
 	// lineage
-	mux.HandleFunc("/api/lineages", s.handleLineages)         // GET list, POST create
-	mux.HandleFunc("/api/lineages/", s.handleLineageByID)     // GET /{id}, POST /{id}/transition
+	mux.HandleFunc("/api/lineages", s.handleLineages)     // GET list, POST create
+	mux.HandleFunc("/api/lineages/", s.handleLineageByID) // GET /{id}, POST /{id}/transition
 
 	// reads & generations
-	mux.HandleFunc("/api/lineages/{id}/reads", s.handleReads)            // POST ingest, GET list
-	mux.HandleFunc("/api/lineages/{id}/generations/{gen}/reads", s.handleGenerationReads) // GET list gen
-	mux.HandleFunc("/api/lineages/{id}/edges", s.handleEdges)            // POST add edge
-	mux.HandleFunc("/api/lineages/{id}/generations/{gen}/correct", s.handleCorrect) // POST correct
-	mux.HandleFunc("/api/lineages/{id}/generations/{gen}/clusters", s.handleClusters) // GET clusters
-	mux.HandleFunc("/api/lineages/{id}/ancestor", s.handleLockAncestor)  // POST lock ancestor
+	mux.HandleFunc("/api/lineages/{id}/reads", s.handleReads)                                 // POST ingest, GET list
+	mux.HandleFunc("/api/lineages/{id}/generations/{gen}/reads", s.handleGenerationReads)     // GET list gen
+	mux.HandleFunc("/api/lineages/{id}/edges", s.handleEdges)                                 // POST add edge
+	mux.HandleFunc("/api/lineages/{id}/edges/list", s.handleEdgeList)                         // GET generation edges
+	mux.HandleFunc("/api/lineages/{id}/generations/{gen}/correct", s.handleCorrect)           // POST correct
+	mux.HandleFunc("/api/lineages/{id}/generations/{gen}/clusters", s.handleClusters)         // GET clusters
+	mux.HandleFunc("/api/lineages/{id}/generations/{gen}/quality", s.handleGenerationQuality) // GET quality summary
+	mux.HandleFunc("/api/lineages/{id}/generations/{gen}/expected", s.handleExpectedBarcodes) // GET inherited set
+	mux.HandleFunc("/api/lineages/{id}/ancestor", s.handleLockAncestor)                       // POST lock ancestor
+	mux.HandleFunc("/api/lineages/{id}/ancestor/barcodes", s.handleAncestorBarcodes)          // GET locked set
 
 	// discrimination
 	mux.HandleFunc("/api/lineages/{id}/generations/{gen}/analyze", s.handleAnalyze) // POST analyze
-	mux.HandleFunc("/api/lineages/{id}/candidates", s.handleCandidates) // GET list
-	mux.HandleFunc("/api/candidates/{cid}/decide", s.handleDecideCandidate) // POST decide
+	mux.HandleFunc("/api/lineages/{id}/candidates", s.handleCandidates)             // GET list
+	mux.HandleFunc("/api/candidates/{cid}/decide", s.handleDecideCandidate)         // POST decide
+	mux.HandleFunc("/api/candidates/{cid}", s.handleCandidateByID)                  // GET detail
 
 	// snapshots
-	mux.HandleFunc("/api/lineages/{id}/snapshots", s.handleSnapshots)   // POST publish, GET list
-	mux.HandleFunc("/api/snapshots/{sid}", s.handleSnapshotByID)        // GET, POST confirm
+	mux.HandleFunc("/api/lineages/{id}/snapshots", s.handleSnapshots)             // POST publish, GET list
+	mux.HandleFunc("/api/snapshots/{sid}", s.handleSnapshotByID)                  // GET, POST confirm
+	mux.HandleFunc("/api/lineages/{id}/snapshots/{sid}", s.handleLineageSnapshot) // GET lineage-scoped detail
 	return mux
 }
 
@@ -148,9 +154,9 @@ func (s *Server) handleReads(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, list)
 	case http.MethodPost:
 		var body struct {
-			Generation int      `json:"generation"`
-			Barcode    string   `json:"barcode"`
-			Quality    []int    `json:"quality"`
+			Generation int    `json:"generation"`
+			Barcode    string `json:"barcode"`
+			Quality    []int  `json:"quality"`
 		}
 		if err := decodeJSON(r, &body); err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -211,6 +217,24 @@ func (s *Server) handleEdges(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, e)
 }
 
+func (s *Server) handleEdgeList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	id := extractID(r.URL.Path, "/api/lineages/")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("missing lineage id"))
+		return
+	}
+	edges, err := s.svc.Store.ListGenerationEdges(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, edges)
+}
+
 func (s *Server) handleCorrect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
@@ -249,6 +273,42 @@ func (s *Server) handleClusters(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+func (s *Server) handleGenerationQuality(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	id, gen, ok := extractGen(r.URL.Path)
+	if !ok {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid path"))
+		return
+	}
+	result, err := s.svc.GenerationQuality(id, gen)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleExpectedBarcodes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	id, gen, ok := extractGen(r.URL.Path)
+	if !ok {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid path"))
+		return
+	}
+	result, err := s.svc.ExpectedBarcodes(id, gen)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) handleLockAncestor(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
@@ -271,6 +331,24 @@ func (s *Server) handleLockAncestor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "locked"})
+}
+
+func (s *Server) handleAncestorBarcodes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	id := extractID(r.URL.Path, "/api/lineages/")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("missing lineage id"))
+		return
+	}
+	barcodes, err := s.svc.AncestorBarcodes(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, barcodes)
 }
 
 func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
@@ -329,6 +407,24 @@ func (s *Server) handleDecideCandidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "decided"})
+}
+
+func (s *Server) handleCandidateByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	id := extractID(r.URL.Path, "/api/candidates/")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("missing candidate id"))
+		return
+	}
+	candidate, err := s.svc.GetCandidate(id)
+	if err != nil {
+		writeError(w, statusNotFound(err), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, candidate)
 }
 
 func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
@@ -391,6 +487,28 @@ func (s *Server) handleSnapshotByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
 	}
+}
+
+func (s *Server) handleLineageSnapshot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 5 || parts[0] != "api" || parts[1] != "lineages" || parts[3] != "snapshots" || parts[2] == "" || parts[4] == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid path"))
+		return
+	}
+	snap, err := s.svc.Store.GetSnapshot(parts[4])
+	if err != nil {
+		writeError(w, statusNotFound(err), err)
+		return
+	}
+	if snap.LineageID != parts[2] {
+		writeError(w, http.StatusNotFound, model.ErrNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, snap)
 }
 
 // ---- helpers ----

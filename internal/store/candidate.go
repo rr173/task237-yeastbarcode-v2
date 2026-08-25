@@ -36,6 +36,14 @@ func (s *Store) UpdateCandidateStatus(id string, status model.CandidateStatus, n
 	return nil
 }
 
+// GetCandidate fetches one contamination candidate by id.
+func (s *Store) GetCandidate(id string) (*model.ContaminationCandidate, error) {
+	row := s.db.QueryRow(
+		`SELECT id, lineage_id, generation, barcode, evidence_score, frequency, source, status, verdict_note, decided_at
+		 FROM candidates WHERE id = ?`, id)
+	return scanCandidate(row)
+}
+
 // ListCandidates returns candidates for a lineage ordered by generation, score.
 func (s *Store) ListCandidates(lineageID string) ([]*model.ContaminationCandidate, error) {
 	rows, err := s.db.Query(
