@@ -34,6 +34,9 @@ var ErrDuplicate = errors.New("model: duplicate entity")
 // compare-and-set race against another request.
 var ErrStateConflict = errors.New("model: concurrent state transition")
 
+// ErrSnapshotConflict is returned when two requests race to publish one draft.
+var ErrSnapshotConflict = errors.New("model: snapshot already transitioned")
+
 // LineageStatus enumerates the lifecycle of a culture lineage.
 type LineageStatus string
 

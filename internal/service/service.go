@@ -150,7 +150,11 @@ func (s *Services) AnalyzeGeneration(lineageID string, generation int) ([]*model
 
 // DecideCandidate delegates to discriminate.
 func (s *Services) DecideCandidate(id string, confirm bool, note string) error {
-	return s.Discriminate.DecideCandidate(id, confirm, note)
+	candidate, err := s.Store.GetCandidate(id)
+	if err != nil {
+		return err
+	}
+	return s.Discriminate.DecideCandidate(id, confirm, note, candidate.Status)
 }
 
 // GetCandidate returns a single candidate for detail views and API clients.

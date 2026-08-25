@@ -158,7 +158,7 @@ func (s *Service) parentBarcodes(lineageID string, generation int) (map[string]b
 }
 
 // DecideCandidate transitions a candidate to confirmed/rejected with a note.
-func (s *Service) DecideCandidate(id string, confirm bool, note string) error {
+func (s *Service) DecideCandidate(id string, confirm bool, note string, expected ...model.CandidateStatus) error {
 	existing, err := s.st.ListCandidates("")
 	_ = existing
 	// fetch single by scanning (store has no GetCandidate; use list filter)
@@ -175,6 +175,9 @@ func (s *Service) DecideCandidate(id string, confirm bool, note string) error {
 	}
 	if target == nil {
 		return model.ErrNotFound
+	}
+	if len(expected) > 0 && target.Status != expected[0] {
+		return model.ErrStateConflict
 	}
 	if err := s.st.EnsureLineageMutable(target.LineageID); err != nil {
 		return err

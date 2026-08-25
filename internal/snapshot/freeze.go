@@ -118,7 +118,7 @@ func (s *Service) Confirm(id string) error {
 		return err
 	}
 	if !changed {
-		return model.ErrStateConflict
+		return model.ErrSnapshotConflict
 	}
 	return nil
 }
