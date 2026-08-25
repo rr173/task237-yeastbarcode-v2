@@ -37,6 +37,11 @@ var ErrStateConflict = errors.New("model: concurrent state transition")
 // ErrSnapshotConflict is returned when two requests race to publish one draft.
 var ErrSnapshotConflict = errors.New("model: snapshot already transitioned")
 
+// ErrAncestorAlreadyLocked is returned when a lineage that already has a
+// founding generation locked as ancestor is asked to lock a different
+// generation. A lineage admits at most one founding (ancestor) generation.
+var ErrAncestorAlreadyLocked = errors.New("model: ancestor already locked for another generation")
+
 // LineageStatus enumerates the lifecycle of a culture lineage.
 type LineageStatus string
 

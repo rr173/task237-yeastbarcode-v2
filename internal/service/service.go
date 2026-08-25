@@ -127,8 +127,7 @@ func (s *Services) CorrectGeneration(lineageID string, generation int) ([]*model
 
 // LockAncestor delegates to lineage.
 func (s *Services) LockAncestor(lineageID string, generation int) error {
-	_ = s.Lineage.LockAncestor(lineageID, generation)
-	return nil
+	return s.Lineage.LockAncestor(lineageID, generation)
 }
 
 // AnalyzeGeneration runs contamination analysis for one generation.
