@@ -4,7 +4,6 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -92,13 +91,11 @@ func (s *Services) TransitionLineage(id string, to model.LineageStatus) (*model.
 	return l, nil
 }
 
-// IngestRead delegates to the read service.
+// IngestRead delegates to the read service. It preserves model.ErrDuplicate so
+// the HTTP layer can report a duplicate submission (200 duplicate) rather than a
+// spurious 201 Created; the existing record is attached to the error.
 func (s *Services) IngestRead(lineageID string, generation int, bc string, q []int) (*model.BarcodeRead, error) {
-	read, err := s.Read.IngestRead(lineageID, generation, bc, q)
-	if errors.Is(err, model.ErrDuplicate) {
-		return nil, nil
-	}
-	return read, err
+	return s.Read.IngestRead(lineageID, generation, bc, q)
 }
 
 // AddGenerationEdge validates (cycle guard) then stores an edge.

@@ -11,18 +11,30 @@ import (
 
 // SaveRead inserts a barcode read, enforcing the content-hash idempotency key.
 // If an identical read already exists, it returns the existing record and
-// model.ErrDuplicate so the caller can skip re-processing.
-func (s *Store) SaveRead(r *model.BarcodeRead) error {
+// model.ErrDuplicate so the caller can skip re-processing. The decision is made
+// atomically by the INSERT ... ON CONFLICT DO NOTHING verdict, so concurrent
+// callers cannot all report a successful insert: exactly the one that wins the
+// race returns (r, nil); the rest return (existing, model.ErrDuplicate).
+func (s *Store) SaveRead(r *model.BarcodeRead) (*model.BarcodeRead, error) {
 	q := strings.TrimSpace(strings.Trim(fmt.Sprint(r.Quality), "[]"))
-	_, err := s.db.Exec(
+	res, err := s.db.Exec(
 		`INSERT INTO reads (id, lineage_id, generation, raw_barcode, corrected_barcode, quality, status, cluster_id, hash, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(hash) DO NOTHING`,
 		r.ID, r.LineageID, r.Generation, r.RawBarcode, r.CorrectedBarcode, q, string(r.Status), r.ClusterID, r.Hash, r.CreatedAt.Format(time.RFC3339))
 	if err != nil {
-		return fmt.Errorf("store: save read: %w", err)
+		return nil, fmt.Errorf("store: save read: %w", err)
 	}
-	return nil
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		// hash conflict: identical content already stored under another row.
+		existing, lerr := s.GetReadByHash(r.Hash)
+		if lerr != nil {
+			return nil, fmt.Errorf("store: save read: resolve conflict: %w", lerr)
+		}
+		return existing, model.ErrDuplicate
+	}
+	return r, nil
 }
 
 // GetReadByHash returns a read by its content hash (for idempotent lookup).

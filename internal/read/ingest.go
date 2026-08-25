@@ -4,6 +4,7 @@
 package read
 
 import (
+	"errors"
 	"time"
 
 	"task237-yeastbarcode/internal/model"
@@ -21,6 +22,9 @@ func New(st *store.Store) *Service { return &Service{st: st} }
 // IngestRead validates a raw read, computes its content hash for idempotency and
 // stores it. It returns the stored read; if an identical read was already
 // present it returns model.ErrDuplicate with the existing record attached.
+// Dedup is decided atomically by the content-hash INSERT, so concurrent
+// submissions of identical content yield exactly one stored read and report
+// model.ErrDuplicate to every other caller.
 func (s *Service) IngestRead(lineageID string, generation int, rawBarcode string, quality []int) (*model.BarcodeRead, error) {
 	if err := s.st.EnsureLineageMutable(lineageID); err != nil {
 		return nil, err
@@ -32,11 +36,6 @@ func (s *Service) IngestRead(lineageID string, generation int, rawBarcode string
 		return nil, err
 	}
 	hash := model.ReadHash(lineageID, generation, rawBarcode, quality)
-	existing, err := s.st.GetReadByHash(hash)
-	if err == nil && existing != nil {
-		// idempotent: identical content already stored
-		return existing, model.ErrDuplicate
-	}
 	r := &model.BarcodeRead{
 		ID:         model.ClusterHash(lineageID, generation, hash)[:16],
 		LineageID:  lineageID,
@@ -47,10 +46,15 @@ func (s *Service) IngestRead(lineageID string, generation int, rawBarcode string
 		Hash:       hash,
 		CreatedAt:  time.Now().UTC(),
 	}
-	if err := s.st.SaveRead(r); err != nil {
+	stored, err := s.st.SaveRead(r)
+	if err != nil {
+		if errors.Is(err, model.ErrDuplicate) {
+			// idempotent: identical content already stored under the existing record
+			return stored, model.ErrDuplicate
+		}
 		return nil, err
 	}
-	return r, nil
+	return stored, nil
 }
 
 // AddGenerationEdge validates and stores a parent->child generation edge. It
