@@ -23,19 +23,22 @@ func New(st *store.Store) *Service { return &Service{st: st} }
 
 // Result is the frozen payload carried by a snapshot.
 type Result struct {
-	LineageID   string                    `json:"lineage_id"`
-	GeneratedAt string                    `json:"generated_at"`
-	Clusters    []*model.CorrectionCluster `json:"clusters"`
+	LineageID   string                          `json:"lineage_id"`
+	GeneratedAt string                          `json:"generated_at"`
+	Clusters    []*model.CorrectionCluster      `json:"clusters"`
 	Candidates  []*model.ContaminationCandidate `json:"candidates"`
-	Confirmed   int                       `json:"confirmed"`
-	Rejected    int                       `json:"rejected"`
-	Pending     int                       `json:"pending"`
+	Confirmed   int                             `json:"confirmed"`
+	Rejected    int                             `json:"rejected"`
+	Pending     int                             `json:"pending"`
 }
 
 // Publish builds a snapshot from the current state of a lineage and stores it
 // as draft (caller may then confirm publication). If a prior published snapshot
 // exists it is superseded.
 func (s *Service) Publish(lineageID, summary string) (*model.DiscriminationSnapshot, error) {
+	if err := s.st.EnsureLineageMutable(lineageID); err != nil {
+		return nil, err
+	}
 	clusters, err := s.st.ListClusters(lineageID)
 	if err != nil {
 		return nil, err

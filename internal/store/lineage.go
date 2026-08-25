@@ -31,6 +31,18 @@ func (s *Store) GetLineage(id string) (*model.CultureLineage, error) {
 	return scanLineage(row)
 }
 
+// EnsureLineageMutable rejects writes after a lineage has been sealed.
+func (s *Store) EnsureLineageMutable(id string) error {
+	lineage, err := s.GetLineage(id)
+	if err != nil {
+		return err
+	}
+	if lineage.Status == model.LineageSealed {
+		return model.ErrSealedMutate
+	}
+	return nil
+}
+
 // ListLineages returns all lineages ordered by creation time.
 func (s *Store) ListLineages() ([]*model.CultureLineage, error) {
 	rows, err := s.db.Query(`SELECT id, name, status, created_at, sealed_at FROM lineages ORDER BY created_at`)

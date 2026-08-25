@@ -13,6 +13,9 @@ func TestPublishConfirmAndReadFrozenResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
+	if err := st.SaveLineage(&model.CultureLineage{ID: "L-snapshot", Name: "snapshot", Status: model.LineageFiled}); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.SaveCluster(&model.CorrectionCluster{ID: "cluster", LineageID: "L-snapshot", Generation: 0, CanonicalBarcode: "ACGT", ReadCount: 3}); err != nil {
 		t.Fatal(err)
 	}
