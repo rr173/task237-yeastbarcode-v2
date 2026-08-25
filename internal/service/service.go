@@ -127,6 +127,9 @@ func (s *Services) CorrectGeneration(lineageID string, generation int) ([]*model
 
 // LockAncestor delegates to lineage.
 func (s *Services) LockAncestor(lineageID string, generation int) error {
+	if _, err := s.Store.GetLineage(lineageID); err != nil {
+		return err
+	}
 	return s.Lineage.LockAncestor(lineageID, generation)
 }
 

@@ -1,6 +1,8 @@
 package lineage
 
 import (
+	"fmt"
+
 	"task237-yeastbarcode/internal/model"
 )
 
@@ -11,6 +13,13 @@ import (
 func (s *Service) LockAncestor(lineageID string, generation int) error {
 	if err := s.st.EnsureLineageMutable(lineageID); err != nil {
 		return err
+	}
+	lockedGeneration, locked, err := s.st.AncestorGeneration(lineageID)
+	if err != nil {
+		return err
+	}
+	if locked && lockedGeneration != generation {
+		return fmt.Errorf("lineage: ancestor already locked at generation %d", lockedGeneration)
 	}
 	clusters, err := s.st.ListClusters(lineageID)
 	if err != nil {

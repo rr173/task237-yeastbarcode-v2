@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
 
 	"task237-yeastbarcode/internal/model"
@@ -67,6 +68,19 @@ func (s *Store) ListAncestorBarcodes(lineageID string) (map[string]bool, error) 
 		out[barcode] = true
 	}
 	return out, rows.Err()
+}
+
+// AncestorGeneration returns the locked ancestor generation, if one exists.
+func (s *Store) AncestorGeneration(lineageID string) (int, bool, error) {
+	var generation int
+	err := s.db.QueryRow(`SELECT generation FROM correction_clusters WHERE lineage_id = ? AND is_ancestor = 1 ORDER BY generation LIMIT 1`, lineageID).Scan(&generation)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("store: ancestor generation: %w", err)
+	}
+	return generation, true, nil
 }
 
 func boolToInt(b bool) int {
