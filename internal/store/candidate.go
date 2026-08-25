@@ -39,6 +39,23 @@ func (s *Store) UpdateCandidateStatus(id string, status model.CandidateStatus, n
 	return nil
 }
 
+// TransitionCandidate atomically applies a candidate state transition only if
+// the row still has the expected prior status.
+func (s *Store) TransitionCandidate(id string, from, to model.CandidateStatus, note, decided string) (bool, error) {
+	result, err := s.db.Exec(
+		`UPDATE candidates SET status = ?, verdict_note = ?, decided_at = ?
+		 WHERE id = ? AND status = ?`,
+		string(to), note, decided, id, string(from))
+	if err != nil {
+		return false, fmt.Errorf("store: transition candidate: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("store: inspect candidate transition: %w", err)
+	}
+	return rows == 1, nil
+}
+
 // GetCandidate fetches one contamination candidate by id.
 func (s *Store) GetCandidate(id string) (*model.ContaminationCandidate, error) {
 	row := s.db.QueryRow(

@@ -30,110 +30,114 @@ var ErrNotFound = errors.New("model: entity not found")
 // ErrDuplicate is returned when a unique constraint is violated.
 var ErrDuplicate = errors.New("model: duplicate entity")
 
+// ErrStateConflict is returned when a concurrent state transition lost a
+// compare-and-set race against another request.
+var ErrStateConflict = errors.New("model: concurrent state transition")
+
 // LineageStatus enumerates the lifecycle of a culture lineage.
 type LineageStatus string
 
 const (
-	LineageFiled    LineageStatus = "filed"     // 建档
+	LineageFiled      LineageStatus = "filed"      // 建档
 	LineageSequencing LineageStatus = "sequencing" // 测序中
-	LineagePending  LineageStatus = "pending"   // 待判别
-	LineageConfirmed LineageStatus = "confirmed" // 确认
-	LineageSealed   LineageStatus = "sealed"    // 封存
+	LineagePending    LineageStatus = "pending"    // 待判别
+	LineageConfirmed  LineageStatus = "confirmed"  // 确认
+	LineageSealed     LineageStatus = "sealed"     // 封存
 )
 
 // ReadStatus enumerates the lifecycle of a barcode read.
 type ReadStatus string
 
 const (
-	ReadRaw      ReadStatus = "raw"       // 原始
-	ReadCorrected ReadStatus = "corrected" // 已纠错
+	ReadRaw        ReadStatus = "raw"         // 原始
+	ReadCorrected  ReadStatus = "corrected"   // 已纠错
 	ReadLowQuality ReadStatus = "low_quality" // 低质
-	ReadDuplicate ReadStatus = "duplicate" // 重复
-	ReadExcluded ReadStatus = "excluded"  // 排除
+	ReadDuplicate  ReadStatus = "duplicate"   // 重复
+	ReadExcluded   ReadStatus = "excluded"    // 排除
 )
 
 // CandidateStatus enumerates the lifecycle of a contamination candidate.
 type CandidateStatus string
 
 const (
-	CandGenerated   CandidateStatus = "generated"   // 生成
+	CandGenerated    CandidateStatus = "generated"    // 生成
 	CandInsufficient CandidateStatus = "insufficient" // 证据不足
-	CandConfirmed   CandidateStatus = "confirmed"   // 确认
-	CandRejected    CandidateStatus = "rejected"    // 否决
+	CandConfirmed    CandidateStatus = "confirmed"    // 确认
+	CandRejected     CandidateStatus = "rejected"     // 否决
 )
 
 // SnapshotStatus enumerates the lifecycle of a discrimination snapshot.
 type SnapshotStatus string
 
 const (
-	SnapDraft    SnapshotStatus = "draft"    // 草稿
-	SnapPublished SnapshotStatus = "published" // 发布
+	SnapDraft      SnapshotStatus = "draft"      // 草稿
+	SnapPublished  SnapshotStatus = "published"  // 发布
 	SnapSuperseded SnapshotStatus = "superseded" // 替代
 )
 
 // CultureLineage is a bacterial/yeast culture tracked across generations.
 type CultureLineage struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Status      LineageStatus `json:"status"`
-	CreatedAt   time.Time    `json:"created_at"`
-	SealedAt    *time.Time   `json:"sealed_at,omitempty"`
+	ID        string        `json:"id"`
+	Name      string        `json:"name"`
+	Status    LineageStatus `json:"status"`
+	CreatedAt time.Time     `json:"created_at"`
+	SealedAt  *time.Time    `json:"sealed_at,omitempty"`
 }
 
 // BarcodeRead is one sequencing read of a barcode from a culture generation.
 type BarcodeRead struct {
-	ID          string    `json:"id"`
-	LineageID   string    `json:"lineage_id"`
-	Generation  int       `json:"generation"`
-	RawBarcode  string    `json:"raw_barcode"`
-	CorrectedBarcode string `json:"corrected_barcode,omitempty"`
-	Quality     []int     `json:"quality"` // phred-like per position
-	Status      ReadStatus `json:"status"`
-	ClusterID   string    `json:"cluster_id,omitempty"`
-	Hash        string    `json:"hash"` // content hash for idempotency
-	CreatedAt   time.Time `json:"created_at"`
+	ID               string     `json:"id"`
+	LineageID        string     `json:"lineage_id"`
+	Generation       int        `json:"generation"`
+	RawBarcode       string     `json:"raw_barcode"`
+	CorrectedBarcode string     `json:"corrected_barcode,omitempty"`
+	Quality          []int      `json:"quality"` // phred-like per position
+	Status           ReadStatus `json:"status"`
+	ClusterID        string     `json:"cluster_id,omitempty"`
+	Hash             string     `json:"hash"` // content hash for idempotency
+	CreatedAt        time.Time  `json:"created_at"`
 }
 
 // GenerationEdge is a parent->child relationship between lineage generations.
 type GenerationEdge struct {
-	ParentGeneration int `json:"parent_generation"`
-	ChildGeneration  int `json:"child_generation"`
+	ParentGeneration int    `json:"parent_generation"`
+	ChildGeneration  int    `json:"child_generation"`
 	LineageID        string `json:"lineage_id"`
 }
 
 // CorrectionCluster groups reads that collapse to the same corrected barcode.
 type CorrectionCluster struct {
-	ID             string `json:"id"`
-	LineageID      string `json:"lineage_id"`
-	Generation     int    `json:"generation"`
+	ID               string `json:"id"`
+	LineageID        string `json:"lineage_id"`
+	Generation       int    `json:"generation"`
 	CanonicalBarcode string `json:"canonical_barcode"`
-	ReadCount      int    `json:"read_count"`
-	IsAncestor     bool   `json:"is_ancestor"` // locked ancestor clone barcode
+	ReadCount        int    `json:"read_count"`
+	IsAncestor       bool   `json:"is_ancestor"` // locked ancestor clone barcode
 }
 
 // ContaminationCandidate is a foreign barcode suspected of contamination.
 type ContaminationCandidate struct {
-	ID            string         `json:"id"`
-	LineageID     string         `json:"lineage_id"`
-	Generation    int            `json:"generation"`
-	Barcode       string         `json:"barcode"`
-	EvidenceScore float64        `json:"evidence_score"`
-	Frequency     float64        `json:"frequency"`
-	Source        string         `json:"source"` // how it was detected
+	ID            string          `json:"id"`
+	LineageID     string          `json:"lineage_id"`
+	Generation    int             `json:"generation"`
+	Barcode       string          `json:"barcode"`
+	EvidenceScore float64         `json:"evidence_score"`
+	Frequency     float64         `json:"frequency"`
+	Source        string          `json:"source"` // how it was detected
 	Status        CandidateStatus `json:"status"`
-	VerdictNote   string         `json:"verdict_note,omitempty"`
-	DecidedAt     *time.Time     `json:"decided_at,omitempty"`
+	VerdictNote   string          `json:"verdict_note,omitempty"`
+	DecidedAt     *time.Time      `json:"decided_at,omitempty"`
 }
 
 // DiscriminationSnapshot freezes a discrimination result for a lineage.
 type DiscriminationSnapshot struct {
-	ID          string         `json:"id"`
-	LineageID   string         `json:"lineage_id"`
-	Status      SnapshotStatus `json:"status"`
-	Summary     string         `json:"summary"`
-	ResultJSON  string         `json:"result_json"`
-	CreatedAt   time.Time      `json:"created_at"`
-	SupersededBy string        `json:"superseded_by,omitempty"`
+	ID           string         `json:"id"`
+	LineageID    string         `json:"lineage_id"`
+	Status       SnapshotStatus `json:"status"`
+	Summary      string         `json:"summary"`
+	ResultJSON   string         `json:"result_json"`
+	CreatedAt    time.Time      `json:"created_at"`
+	SupersededBy string         `json:"superseded_by,omitempty"`
 }
 
 // ValidLineageTransition checks the allowed status moves for a culture lineage.

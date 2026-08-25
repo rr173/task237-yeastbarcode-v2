@@ -1,6 +1,7 @@
 package discriminate
 
 import (
+	"sync"
 	"testing"
 
 	"task237-yeastbarcode/internal/model"
@@ -34,5 +35,43 @@ func TestAnalyzeGenerationFindsForeignCluster(t *testing.T) {
 	}
 	if len(cands) != 1 || cands[0].Barcode != "TTTT" || cands[0].Status != model.CandGenerated {
 		t.Fatalf("unexpected candidates: %+v", cands)
+	}
+}
+
+func TestConcurrentCandidateDecisionsUseCompareAndSet(t *testing.T) {
+	st, err := store.Open(t.TempDir() + "/decision-race.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.SaveLineage(&model.CultureLineage{ID: "L-decision-race", Name: "decision race", Status: model.LineageFiled}); err != nil {
+		t.Fatal(err)
+	}
+	candidate := &model.ContaminationCandidate{ID: "candidate-race", LineageID: "L-decision-race", Generation: 1, Barcode: "TTTT", EvidenceScore: 0.8, Frequency: 0.2, Source: "test", Status: model.CandGenerated}
+	if err := st.SaveCandidate(candidate); err != nil {
+		t.Fatal(err)
+	}
+	svc := New(st, DefaultConfig())
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, confirm := range []bool{true, false} {
+		wg.Add(1)
+		go func(confirm bool) {
+			defer wg.Done()
+			errs <- svc.DecideCandidate(candidate.ID, confirm, "concurrent")
+		}(confirm)
+	}
+	wg.Wait()
+	close(errs)
+	successes, conflicts := 0, 0
+	for callErr := range errs {
+		if callErr == nil {
+			successes++
+		} else {
+			conflicts++
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("decision outcomes successes=%d conflicts=%d", successes, conflicts)
 	}
 }

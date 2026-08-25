@@ -187,10 +187,14 @@ func (s *Service) DecideCandidate(id string, confirm bool, note string) error {
 		return fmt.Errorf("discriminate: invalid candidate transition %s->%s", target.Status, to)
 	}
 	now := time.Now().UTC()
-	target.Status = to
-	target.VerdictNote = note
-	target.DecidedAt = &now
-	return s.st.SaveCandidate(target)
+	changed, err := s.st.TransitionCandidate(id, target.Status, to, note, now.Format(time.RFC3339Nano))
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return model.ErrStateConflict
+	}
+	return nil
 }
 
 func (s *Service) allCandidates() ([]*model.ContaminationCandidate, error) {

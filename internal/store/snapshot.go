@@ -31,6 +31,21 @@ func (s *Store) SupersedeSnapshot(oldID, newID string) error {
 	return nil
 }
 
+// PublishSnapshotIfDraft atomically publishes a draft snapshot once.
+func (s *Store) PublishSnapshotIfDraft(id string) (bool, error) {
+	result, err := s.db.Exec(
+		`UPDATE snapshots SET status = ? WHERE id = ? AND status = ?`,
+		string(model.SnapPublished), id, string(model.SnapDraft))
+	if err != nil {
+		return false, fmt.Errorf("store: publish snapshot: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("store: inspect snapshot publication: %w", err)
+	}
+	return rows == 1, nil
+}
+
 // SupersedeOtherSnapshots closes older drafts and publications when one result is confirmed.
 func (s *Store) SupersedeOtherSnapshots(lineageID, keepID string) error {
 	_, err := s.db.Exec(

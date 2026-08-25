@@ -113,8 +113,14 @@ func (s *Service) Confirm(id string) error {
 	if err := s.st.SupersedeOtherSnapshots(snap.LineageID, snap.ID); err != nil {
 		return err
 	}
-	snap.Status = model.SnapPublished
-	return s.st.SaveSnapshot(snap)
+	changed, err := s.st.PublishSnapshotIfDraft(id)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return model.ErrStateConflict
+	}
+	return nil
 }
 
 // GetResult decodes a snapshot's frozen result payload.
