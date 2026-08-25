@@ -40,12 +40,17 @@ func (s *Store) UpdateCandidateStatus(id string, status model.CandidateStatus, n
 }
 
 // TransitionCandidate atomically applies a candidate state transition only if
-// the row still has the expected prior status.
+// the row still has the expected prior status. It is the compare-and-set guard
+// that gives candidate verdicts one-time submission semantics under concurrency:
+// the UPDATE is conditioned on both the candidate id and its current status, so
+// two racing decide requests cannot both report success. changed is false (with a
+// nil error) when no row matched the expected status, signalling that another
+// request already moved the candidate.
 func (s *Store) TransitionCandidate(id string, from, to model.CandidateStatus, note, decided string) (bool, error) {
 	result, err := s.db.Exec(
 		`UPDATE candidates SET status = ?, verdict_note = ?, decided_at = ?
-			 WHERE id = ?`,
-		string(to), note, decided, id)
+			 WHERE id = ? AND status = ?`,
+		string(to), note, decided, id, string(from))
 	if err != nil {
 		return false, fmt.Errorf("store: transition candidate: %w", err)
 	}

@@ -158,23 +158,16 @@ func (s *Service) parentBarcodes(lineageID string, generation int) (map[string]b
 }
 
 // DecideCandidate transitions a candidate to confirmed/rejected with a note.
+// The transition is applied as a single compare-and-set UPDATE conditioned on
+// the candidate's current status, so two researchers deciding the same
+// candidate concurrently cannot both succeed: the first writer flips the
+// status and the second's conditional UPDATE matches zero rows and returns
+// model.ErrStateConflict. This gives the verdict one-time submission
+// semantics — the candidate is updated at most once.
 func (s *Service) DecideCandidate(id string, confirm bool, note string) error {
-	existing, err := s.st.ListCandidates("")
-	_ = existing
-	// fetch single by scanning (store has no GetCandidate; use list filter)
-	all, err := s.allCandidates()
+	target, err := s.st.GetCandidate(id)
 	if err != nil {
 		return err
-	}
-	var target *model.ContaminationCandidate
-	for _, c := range all {
-		if c.ID == id {
-			target = c
-			break
-		}
-	}
-	if target == nil {
-		return model.ErrNotFound
 	}
 	if err := s.st.EnsureLineageMutable(target.LineageID); err != nil {
 		return err
@@ -186,26 +179,15 @@ func (s *Service) DecideCandidate(id string, confirm bool, note string) error {
 	if !model.ValidCandidateTransition(target.Status, to) {
 		return fmt.Errorf("discriminate: invalid candidate transition %s->%s", target.Status, to)
 	}
-	now := time.Now().UTC()
-	target.Status = to
-	target.VerdictNote = note
-	target.DecidedAt = &now
-	return s.st.SaveCandidate(target)
-}
-
-func (s *Service) allCandidates() ([]*model.ContaminationCandidate, error) {
-	// iterate known lineages (small scale); used only by DecideCandidate
-	lineages, err := s.st.ListLineages()
+	decided := time.Now().UTC().Format(time.RFC3339)
+	changed, err := s.st.TransitionCandidate(id, target.Status, to, note, decided)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	out := []*model.ContaminationCandidate{}
-	for _, l := range lineages {
-		cs, err := s.st.ListCandidates(l.ID)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, cs...)
+	if !changed {
+		// Another request already moved this candidate out of the expected
+		// status between our read and our conditional UPDATE.
+		return model.ErrStateConflict
 	}
-	return out, nil
+	return nil
 }

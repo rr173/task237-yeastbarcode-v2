@@ -5,6 +5,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -403,7 +404,7 @@ func (s *Server) handleDecideCandidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.svc.DecideCandidate(cid, body.Confirm, body.Note); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeError(w, statusForCandidateDecision(err), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "decided"})
@@ -538,6 +539,19 @@ func statusNotFound(err error) int {
 		return http.StatusNotFound
 	}
 	return http.StatusBadRequest
+}
+
+// statusForCandidateDecision maps decide errors to status codes. A concurrent
+// verdict that lost the compare-and-set race is a conflict, not a bad request.
+func statusForCandidateDecision(err error) int {
+	switch {
+	case errors.Is(err, model.ErrStateConflict):
+		return http.StatusConflict
+	case err == model.ErrNotFound:
+		return http.StatusNotFound
+	default:
+		return http.StatusBadRequest
+	}
 }
 
 func extractID(path, prefix string) string {
